@@ -1,0 +1,1655 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+
+// ============================================================
+// CONSTANTS & CONFIG
+// ============================================================
+const TOOLS = [
+  { id: "trim", icon: "✂️", label: "Trim" },
+  { id: "split", icon: "⚡", label: "Split" },
+  { id: "speed", icon: "🚀", label: "Speed" },
+  { id: "text", icon: "T", label: "Text" },
+  { id: "music", icon: "🎵", label: "Music" },
+  { id: "filter", icon: "✨", label: "Filter" },
+  { id: "sticker", icon: "😊", label: "Sticker" },
+  { id: "blur", icon: "◎", label: "Blur" },
+  { id: "chroma", icon: "🟢", label: "Chroma" },
+  { id: "keyframe", icon: "◆", label: "Keyframe" },
+  { id: "transition", icon: "↔", label: "Transition" },
+  { id: "adjust", icon: "⚙️", label: "Adjust" },
+];
+
+const FILTERS = [
+  { id: "none", label: "Original", style: "" },
+  { id: "vivid", label: "Vivid", style: "saturate(1.8) contrast(1.1)" },
+  { id: "matte", label: "Matte", style: "contrast(0.85) brightness(1.1) saturate(0.8)" },
+  { id: "cool", label: "Cool", style: "hue-rotate(200deg) saturate(1.2)" },
+  { id: "warm", label: "Warm", style: "hue-rotate(-20deg) saturate(1.3) brightness(1.05)" },
+  { id: "bw", label: "B&W", style: "grayscale(1) contrast(1.2)" },
+  { id: "fade", label: "Fade", style: "opacity(0.8) brightness(1.2) saturate(0.7)" },
+  { id: "cinema", label: "Cinema", style: "contrast(1.3) brightness(0.9) saturate(0.85) sepia(0.1)" },
+  { id: "neon", label: "Neon", style: "saturate(2) brightness(1.1) contrast(1.2) hue-rotate(20deg)" },
+  { id: "retro", label: "Retro", style: "sepia(0.6) contrast(1.1) brightness(1.05)" },
+];
+
+const TRANSITIONS = [
+  { id: "none", label: "None", icon: "✗" },
+  { id: "fade", label: "Fade", icon: "○" },
+  { id: "slide", label: "Slide", icon: "→" },
+  { id: "zoom", label: "Zoom", icon: "⊕" },
+  { id: "wipe", label: "Wipe", icon: "▷" },
+  { id: "flash", label: "Flash", icon: "⚡" },
+];
+
+const SPEEDS = [
+  { val: 0.25, label: "0.25x" },
+  { val: 0.5, label: "0.5x" },
+  { val: 0.75, label: "0.75x" },
+  { val: 1, label: "1x" },
+  { val: 1.5, label: "1.5x" },
+  { val: 2, label: "2x" },
+  { val: 4, label: "4x" },
+];
+
+const EXPORT_PRESETS = [
+  { id: "720p", label: "720p HD", size: "1280×720", bitrate: "4Mbps" },
+  { id: "1080p", label: "1080p FHD", size: "1920×1080", bitrate: "8Mbps" },
+  { id: "4k", label: "4K UHD", size: "3840×2160", bitrate: "40Mbps" },
+  { id: "reels", label: "Reels/TikTok", size: "1080×1920", bitrate: "8Mbps" },
+];
+
+const ASPECT_RATIOS = [
+  { id: "16:9", label: "16:9", w: 16, h: 9 },
+  { id: "9:16", label: "9:16", w: 9, h: 16 },
+  { id: "1:1", label: "1:1", w: 1, h: 1 },
+  { id: "4:3", label: "4:3", w: 4, h: 3 },
+];
+
+const STICKERS = ["🔥", "⭐", "💯", "🎉", "❤️", "😍", "🙌", "✨", "🎵", "💫", "🌈", "👑", "🦋", "🌸", "🎯"];
+
+const TEXT_ANIMATIONS = [
+  { id: "none", label: "None" },
+  { id: "fade", label: "Fade In" },
+  { id: "slide", label: "Slide Up" },
+  { id: "bounce", label: "Bounce" },
+  { id: "typewriter", label: "Typewriter" },
+  { id: "zoom", label: "Zoom In" },
+];
+
+// ============================================================
+// UTILITY
+// ============================================================
+const fmtTime = (s) => {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  const ms = Math.floor((s % 1) * 10);
+  return `${m}:${sec.toString().padStart(2, "0")}.${ms}`;
+};
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+// ============================================================
+// GLASS PANEL
+// ============================================================
+const Glass = ({ children, className = "", onClick, style = {} }) => (
+  <div
+    onClick={onClick}
+    style={{
+      background: "rgba(255,255,255,0.04)",
+      backdropFilter: "blur(20px)",
+      border: "1px solid rgba(0,180,255,0.15)",
+      borderRadius: 20,
+      ...style,
+    }}
+    className={className}
+  >
+    {children}
+  </div>
+);
+
+// ============================================================
+// NEON BUTTON
+// ============================================================
+const NeonBtn = ({ children, onClick, active, small, danger, className = "" }) => (
+  <motion.button
+    whileTap={{ scale: 0.93 }}
+    whileHover={{ scale: 1.04 }}
+    onClick={onClick}
+    className={className}
+    style={{
+      padding: small ? "6px 14px" : "10px 22px",
+      borderRadius: 50,
+      border: `1.5px solid ${danger ? "rgba(255,60,80,0.6)" : active ? "rgba(0,200,255,0.9)" : "rgba(0,180,255,0.3)"}`,
+      background: danger
+        ? "rgba(255,40,60,0.15)"
+        : active
+        ? "linear-gradient(135deg,rgba(0,180,255,0.25),rgba(0,100,200,0.15))"
+        : "rgba(255,255,255,0.04)",
+      color: danger ? "#ff6070" : active ? "#00d4ff" : "#aac",
+      fontSize: small ? 12 : 13,
+      fontWeight: 600,
+      cursor: "pointer",
+      boxShadow: active ? "0 0 18px rgba(0,200,255,0.25)" : "none",
+      fontFamily: "'Rajdhani', sans-serif",
+      letterSpacing: 0.5,
+      whiteSpace: "nowrap",
+    }}
+  >
+    {children}
+  </motion.button>
+);
+
+// ============================================================
+// TIMELINE TRACK
+// ============================================================
+const TimelineTrack = ({
+  clip,
+  totalDuration,
+  containerWidth,
+  selected,
+  onClick,
+  onDragEnd,
+  onTrimStart,
+  onTrimEnd,
+  color,
+}) => {
+  const left = totalDuration > 0 ? (clip.start / totalDuration) * containerWidth : 0;
+  const width = totalDuration > 0 ? ((clip.end - clip.start) / totalDuration) * containerWidth : 80;
+
+  return (
+    <motion.div
+      layout
+      drag="x"
+      dragMomentum={false}
+      dragElastic={0}
+      onDragEnd={(e, info) => onDragEnd && onDragEnd(info.offset.x)}
+      onClick={onClick}
+      whileTap={{ scale: 0.98 }}
+      style={{
+        position: "absolute",
+        left,
+        width: Math.max(width, 40),
+        height: 44,
+        borderRadius: 10,
+        background: selected
+          ? `linear-gradient(135deg,${color}55,${color}33)`
+          : `linear-gradient(135deg,${color}33,${color}22)`,
+        border: `2px solid ${selected ? color : color + "66"}`,
+        cursor: "grab",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        boxShadow: selected ? `0 0 20px ${color}44` : "none",
+        userSelect: "none",
+      }}
+    >
+      {/* Trim handles */}
+      <div
+        onPointerDown={(e) => { e.stopPropagation(); onTrimStart && onTrimStart(e); }}
+        style={{ position: "absolute", left: 0, top: 0, width: 8, height: "100%", cursor: "ew-resize", zIndex: 10 }}
+      />
+      <div
+        onPointerDown={(e) => { e.stopPropagation(); onTrimEnd && onTrimEnd(e); }}
+        style={{ position: "absolute", right: 0, top: 0, width: 8, height: "100%", cursor: "ew-resize", zIndex: 10 }}
+      />
+      {/* Waveform / thumbnail strip */}
+      <div style={{ display: "flex", gap: 2, alignItems: "center", padding: "0 10px", overflow: "hidden" }}>
+        {clip.type === "audio" ? (
+          Array.from({ length: Math.max(3, Math.floor(width / 8)) }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 2,
+                height: 8 + Math.sin(i * 1.7) * 12,
+                borderRadius: 2,
+                background: color,
+                opacity: 0.8,
+                flexShrink: 0,
+              }}
+            />
+          ))
+        ) : (
+          <span style={{ fontSize: 10, color: "#fff", opacity: 0.85, fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+            {clip.label || "Clip"}
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+// ============================================================
+// MAIN APP
+// ============================================================
+export default function VideoEditor() {
+  // ---- STATE ----
+  const [project, setProject] = useState({
+    id: uid(),
+    name: "My Project",
+    duration: 0,
+    aspectRatio: "16:9",
+    clips: [],
+    audioClips: [],
+    textLayers: [],
+    stickerLayers: [],
+    keyframes: [],
+  });
+  const [currentTime, setCurrentTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [activeTool, setActiveTool] = useState(null);
+  const [selectedClip, setSelectedClip] = useState(null);
+  const [selectedLayer, setSelectedLayer] = useState(null);
+  const [activeFilter, setActiveFilter] = useState("none");
+  const [volume, setVolume] = useState(100);
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [showExport, setShowExport] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState("video"); // video | audio | text
+  const [showUpload, setShowUpload] = useState(true);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [notification, setNotification] = useState(null);
+  const [blurAmount, setBlurAmount] = useState(0);
+  const [brightness, setBrightness] = useState(100);
+  const [contrast, setContrast] = useState(100);
+  const [saturation, setSaturation] = useState(100);
+  const [speed, setSpeed] = useState(1);
+  const [newText, setNewText] = useState("");
+  const [textAnim, setTextAnim] = useState("fade");
+  const [textColor, setTextColor] = useState("#ffffff");
+  const [textSize, setTextSize] = useState(24);
+  const [activeTransition, setActiveTransition] = useState("fade");
+  const [chromaEnabled, setChromaEnabled] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [showProjects, setShowProjects] = useState(false);
+  const [draggingTime, setDraggingTime] = useState(false);
+
+  const videoRef = useRef(null);
+  const timelineRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const audioInputRef = useRef(null);
+  const playTimerRef = useRef(null);
+  const controls = useAnimation();
+
+  const TIMELINE_WIDTH = 600 * timelineZoom;
+
+  // ---- HELPERS ----
+  const notify = (msg, type = "info") => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 2800);
+  };
+
+  const pushUndo = useCallback((state) => {
+    setUndoStack((s) => [...s.slice(-29), state]);
+    setRedoStack([]);
+  }, []);
+
+  const undo = () => {
+    if (!undoStack.length) return;
+    const prev = undoStack[undoStack.length - 1];
+    setRedoStack((r) => [...r, project]);
+    setProject(prev);
+    setUndoStack((s) => s.slice(0, -1));
+    notify("Undo ✓");
+  };
+
+  const redo = () => {
+    if (!redoStack.length) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((s) => [...s, project]);
+    setProject(next);
+    setRedoStack((r) => r.slice(0, -1));
+    notify("Redo ✓");
+  };
+
+  // ---- PLAYBACK ----
+  useEffect(() => {
+    if (playing) {
+      playTimerRef.current = setInterval(() => {
+        setCurrentTime((t) => {
+          const next = t + 0.1 * speed;
+          if (next >= project.duration) { setPlaying(false); return 0; }
+          return next;
+        });
+      }, 100);
+    } else {
+      clearInterval(playTimerRef.current);
+    }
+    return () => clearInterval(playTimerRef.current);
+  }, [playing, project.duration, speed]);
+
+  // ---- FILE UPLOAD ----
+  const handleVideoUpload = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    files.forEach((file) => {
+      const url = URL.createObjectURL(file);
+      const vid = document.createElement("video");
+      vid.src = url;
+      vid.onloadedmetadata = () => {
+        const dur = vid.duration;
+        const newClip = {
+          id: uid(),
+          type: "video",
+          url,
+          label: file.name.replace(/\.[^.]+$/, ""),
+          start: 0,
+          end: dur,
+          duration: dur,
+          filter: "none",
+          speed: 1,
+          transition: "fade",
+          muted: false,
+          volume: 100,
+        };
+        pushUndo(project);
+        setProject((p) => {
+          const prevEnd = p.clips.reduce((acc, c) => Math.max(acc, c.end), 0);
+          const updated = { ...newClip, start: prevEnd, end: prevEnd + dur };
+          const clips = [...p.clips, updated];
+          const duration = clips.reduce((acc, c) => Math.max(acc, c.end), 0);
+          return { ...p, clips, duration };
+        });
+        setShowUpload(false);
+        notify(`📹 ${file.name} qo'shildi`);
+      };
+    });
+  };
+
+  const handleAudioUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const aud = document.createElement("audio");
+    aud.src = url;
+    aud.onloadedmetadata = () => {
+      const newAudio = {
+        id: uid(),
+        type: "audio",
+        url,
+        label: file.name.replace(/\.[^.]+$/, ""),
+        start: 0,
+        end: aud.duration,
+        duration: aud.duration,
+        volume: 100,
+      };
+      pushUndo(project);
+      setProject((p) => ({ ...p, audioClips: [...p.audioClips, newAudio] }));
+      notify(`🎵 ${file.name} qo'shildi`);
+    };
+  };
+
+  // ---- CLIP OPS ----
+  const trimClip = (clipId, newStart, newEnd) => {
+    pushUndo(project);
+    setProject((p) => {
+      const clips = p.clips.map((c) =>
+        c.id === clipId ? { ...c, start: newStart, end: newEnd } : c
+      );
+      const duration = clips.reduce((acc, c) => Math.max(acc, c.end), 0);
+      return { ...p, clips, duration };
+    });
+  };
+
+  const splitClip = (clipId) => {
+    const clip = project.clips.find((c) => c.id === clipId);
+    if (!clip || currentTime <= clip.start || currentTime >= clip.end) {
+      notify("Kesish uchun to'g'ri pozitsiyani tanlang ⚡", "warn");
+      return;
+    }
+    pushUndo(project);
+    setProject((p) => {
+      const clips = p.clips.flatMap((c) => {
+        if (c.id !== clipId) return [c];
+        return [
+          { ...c, id: uid(), end: currentTime, label: c.label + " A" },
+          { ...c, id: uid(), start: currentTime, label: c.label + " B" },
+        ];
+      });
+      return { ...p, clips };
+    });
+    notify("Clip kesildi ✂️");
+  };
+
+  const deleteClip = (clipId) => {
+    pushUndo(project);
+    setProject((p) => {
+      const clips = p.clips.filter((c) => c.id !== clipId);
+      const duration = clips.reduce((acc, c) => Math.max(acc, c.end), 0);
+      return { ...p, clips, duration };
+    });
+    setSelectedClip(null);
+    notify("Clip o'chirildi 🗑️");
+  };
+
+  const duplicateClip = (clipId) => {
+    const clip = project.clips.find((c) => c.id === clipId);
+    if (!clip) return;
+    pushUndo(project);
+    const dur = clip.end - clip.start;
+    const newClip = { ...clip, id: uid(), start: clip.end, end: clip.end + dur, label: clip.label + " (copy)" };
+    setProject((p) => {
+      const clips = [...p.clips, newClip];
+      const duration = clips.reduce((acc, c) => Math.max(acc, c.end), 0);
+      return { ...p, clips, duration };
+    });
+    notify("Clip nusxalandi 📋");
+  };
+
+  const applyFilter = (clipId, filterId) => {
+    pushUndo(project);
+    setProject((p) => ({
+      ...p,
+      clips: p.clips.map((c) => (c.id === clipId ? { ...c, filter: filterId } : c)),
+    }));
+    setActiveFilter(filterId);
+  };
+
+  const applySpeed = (clipId, spd) => {
+    pushUndo(project);
+    setProject((p) => ({
+      ...p,
+      clips: p.clips.map((c) => (c.id === clipId ? { ...c, speed: spd } : c)),
+    }));
+    setSpeed(spd);
+  };
+
+  // ---- TEXT LAYER ----
+  const addText = () => {
+    if (!newText.trim()) return;
+    pushUndo(project);
+    const layer = {
+      id: uid(),
+      text: newText,
+      color: textColor,
+      size: textSize,
+      animation: textAnim,
+      start: currentTime,
+      end: Math.min(currentTime + 3, project.duration || 5),
+      x: 50, y: 50,
+    };
+    setProject((p) => ({ ...p, textLayers: [...p.textLayers, layer] }));
+    setNewText("");
+    setActiveTool(null);
+    notify("Matn qo'shildi ✍️");
+  };
+
+  const deleteText = (id) => {
+    pushUndo(project);
+    setProject((p) => ({ ...p, textLayers: p.textLayers.filter((l) => l.id !== id) }));
+  };
+
+  // ---- STICKER ----
+  const addSticker = (emoji) => {
+    pushUndo(project);
+    const s = {
+      id: uid(),
+      emoji,
+      x: 40 + Math.random() * 20,
+      y: 40 + Math.random() * 20,
+      size: 40,
+      start: currentTime,
+      end: Math.min(currentTime + 3, project.duration || 5),
+    };
+    setProject((p) => ({ ...p, stickerLayers: [...p.stickerLayers, s] }));
+    notify(`${emoji} sticker qo'shildi`);
+  };
+
+  // ---- EXPORT ----
+  const handleExport = (preset) => {
+    setExporting(true);
+    setExportProgress(0);
+    let p = 0;
+    const timer = setInterval(() => {
+      p += Math.random() * 8 + 2;
+      if (p >= 100) {
+        p = 100;
+        clearInterval(timer);
+        setTimeout(() => {
+          setExporting(false);
+          setShowExport(false);
+          notify(`🎬 ${preset.label} export tayyor!`, "success");
+        }, 600);
+      }
+      setExportProgress(Math.min(p, 100));
+    }, 180);
+  };
+
+  // ---- SAVE PROJECT ----
+  const saveProject = () => {
+    const saved = { ...project, savedAt: new Date().toISOString() };
+    setProjects((ps) => {
+      const idx = ps.findIndex((p) => p.id === project.id);
+      if (idx >= 0) { const n = [...ps]; n[idx] = saved; return n; }
+      return [...ps, saved];
+    });
+    notify("✅ Loyiha saqlandi!", "success");
+  };
+
+  const loadProject = (p) => {
+    pushUndo(project);
+    setProject(p);
+    setShowProjects(false);
+    notify(`📂 "${p.name}" yuklandi`);
+  };
+
+  // ---- TIMELINE SEEK ----
+  const handleTimelineClick = (e) => {
+    const rect = timelineRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const t = (x / TIMELINE_WIDTH) * project.duration;
+    setCurrentTime(Math.max(0, Math.min(t, project.duration)));
+  };
+
+  // ---- ACTIVE CLIP ----
+  const activeClip = project.clips.find((c) => c.id === selectedClip);
+  const filterStyle = activeClip
+    ? FILTERS.find((f) => f.id === activeClip.filter)?.style || ""
+    : "";
+
+  const videoStyle = {
+    filter: [
+      filterStyle,
+      blurAmount > 0 ? `blur(${blurAmount}px)` : "",
+      brightness !== 100 ? `brightness(${brightness}%)` : "",
+      contrast !== 100 ? `contrast(${contrast}%)` : "",
+      saturation !== 100 ? `saturate(${saturation}%)` : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || "none",
+  };
+
+  // ---- TEXT ANIMATION CSS ----
+  const textAnimClass = (anim) => {
+    switch (anim) {
+      case "fade": return { animation: "fadeIn 0.8s ease" };
+      case "slide": return { animation: "slideUp 0.6s ease" };
+      case "bounce": return { animation: "bounceIn 0.7s ease" };
+      case "zoom": return { animation: "zoomIn 0.5s ease" };
+      default: return {};
+    }
+  };
+
+  const hasContent = project.clips.length > 0;
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  return (
+    <div
+      style={{
+        width: "100%",
+        minHeight: "100vh",
+        background: "#08090d",
+        fontFamily: "'Rajdhani', 'Orbitron', sans-serif",
+        color: "#e8eaff",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        userSelect: "none",
+      }}
+    >
+      {/* Google Fonts */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@700;900&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #00b4ff44; border-radius: 4px; }
+        @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+        @keyframes slideUp { from { transform:translateY(20px);opacity:0 } to { transform:none;opacity:1 } }
+        @keyframes bounceIn { 0%{transform:scale(0.3)}50%{transform:scale(1.08)}100%{transform:scale(1)} }
+        @keyframes zoomIn { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        @keyframes neonPulse { 0%,100%{box-shadow:0 0 10px #00b4ff44} 50%{box-shadow:0 0 28px #00b4ffaa,0 0 60px #00b4ff33} }
+        @keyframes scanline { 0%{transform:translateY(-100%)} 100%{transform:translateY(100vh)} }
+        input[type=range] { -webkit-appearance:none; appearance:none; height:4px; border-radius:4px; background:rgba(0,180,255,0.2); outline:none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:#00b4ff; border:2px solid #fff2; box-shadow:0 0 10px #00b4ff88; cursor:pointer; }
+      `}</style>
+
+      {/* NOTIFICATION */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            style={{
+              position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)",
+              zIndex: 9999, padding: "10px 22px", borderRadius: 50,
+              background: notification.type === "success" ? "rgba(0,220,120,0.18)" :
+                          notification.type === "warn" ? "rgba(255,180,0,0.18)" :
+                          "rgba(0,180,255,0.18)",
+              border: `1px solid ${notification.type === "success" ? "rgba(0,220,120,0.5)" :
+                                    notification.type === "warn" ? "rgba(255,180,0,0.5)" :
+                                    "rgba(0,180,255,0.5)"}`,
+              backdropFilter: "blur(20px)",
+              color: "#fff", fontSize: 13, fontWeight: 600, letterSpacing: 0.5,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            }}
+          >
+            {notification.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── TOP BAR ── */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 14px", flexShrink: 0,
+        background: "linear-gradient(180deg,rgba(0,10,25,0.98) 0%,rgba(0,10,25,0.9) 100%)",
+        borderBottom: "1px solid rgba(0,180,255,0.12)",
+        backdropFilter: "blur(20px)", zIndex: 100,
+      }}>
+        {/* Left */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <motion.div
+            animate={{ boxShadow: ["0 0 10px #00b4ff44","0 0 28px #00b4ffaa","0 0 10px #00b4ff44"] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg,#00b4ff,#0055ff)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}
+          >
+            🎬
+          </motion.div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#00d4ff", letterSpacing: 1, fontFamily: "'Orbitron',sans-serif" }}>
+              VidEdit Pro
+            </div>
+            <input
+              value={project.name}
+              onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
+              style={{ background: "none", border: "none", color: "#667", fontSize: 10, outline: "none", width: 100, cursor: "text" }}
+            />
+          </div>
+        </div>
+
+        {/* Right */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <NeonBtn small onClick={undo} active={undoStack.length > 0}>↩ Undo</NeonBtn>
+          <NeonBtn small onClick={redo} active={redoStack.length > 0}>↪ Redo</NeonBtn>
+          <NeonBtn small onClick={() => setShowProjects(true)}>📂</NeonBtn>
+          <NeonBtn small onClick={saveProject}>💾</NeonBtn>
+          <motion.button
+            whileTap={{ scale: 0.93 }}
+            onClick={() => setShowExport(true)}
+            style={{
+              padding: "8px 16px", borderRadius: 50, border: "none",
+              background: "linear-gradient(135deg,#00b4ff,#0055ff)",
+              color: "#fff", fontWeight: 700, fontSize: 12,
+              cursor: "pointer", boxShadow: "0 0 20px #00b4ff55",
+              fontFamily: "'Rajdhani',sans-serif", letterSpacing: 1,
+            }}
+          >
+            Export ▶
+          </motion.button>
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+
+        {/* ── PREVIEW AREA ── */}
+        <div style={{
+          flex: "0 0 auto",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "12px 10px 6px",
+          gap: 10,
+        }}>
+          {/* Canvas */}
+          <div style={{ position: "relative" }}>
+            <div style={{
+              width: 280,
+              height: project.aspectRatio === "9:16" ? 500 : project.aspectRatio === "1:1" ? 280 : 158,
+              borderRadius: 16,
+              overflow: "hidden",
+              background: "#000",
+              border: "2px solid rgba(0,180,255,0.25)",
+              boxShadow: "0 0 40px rgba(0,180,255,0.12)",
+              position: "relative",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.3s",
+            }}>
+              {hasContent ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    src={project.clips[0]?.url}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", ...videoStyle }}
+                    muted
+                    loop
+                    playsInline
+                  />
+                  {/* Chroma overlay */}
+                  {chromaEnabled && (
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      background: "rgba(0,180,0,0.3)",
+                      mixBlendMode: "multiply",
+                      pointerEvents: "none",
+                    }} />
+                  )}
+                  {/* Text layers */}
+                  {project.textLayers
+                    .filter((l) => currentTime >= l.start && currentTime <= l.end)
+                    .map((l) => (
+                      <div
+                        key={l.id}
+                        style={{
+                          position: "absolute",
+                          left: `${l.x}%`,
+                          top: `${l.y}%`,
+                          transform: "translate(-50%,-50%)",
+                          color: l.color,
+                          fontSize: l.size,
+                          fontWeight: 700,
+                          textShadow: "0 2px 12px rgba(0,0,0,0.8)",
+                          pointerEvents: "none",
+                          ...textAnimClass(l.animation),
+                        }}
+                      >
+                        {l.text}
+                      </div>
+                    ))}
+                  {/* Sticker layers */}
+                  {project.stickerLayers
+                    .filter((s) => currentTime >= s.start && currentTime <= s.end)
+                    .map((s) => (
+                      <div
+                        key={s.id}
+                        style={{
+                          position: "absolute",
+                          left: `${s.x}%`,
+                          top: `${s.y}%`,
+                          transform: "translate(-50%,-50%)",
+                          fontSize: s.size,
+                          pointerEvents: "none",
+                          animation: "bounceIn 0.5s ease",
+                        }}
+                      >
+                        {s.emoji}
+                      </div>
+                    ))}
+                  {/* Play overlay */}
+                  {!playing && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      style={{
+                        position: "absolute", inset: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      <motion.div
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setPlaying(true)}
+                        style={{
+                          width: 52, height: 52, borderRadius: "50%",
+                          background: "rgba(0,180,255,0.25)",
+                          border: "2px solid rgba(0,180,255,0.6)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 22, cursor: "pointer",
+                          boxShadow: "0 0 30px rgba(0,180,255,0.4)",
+                        }}
+                      >▶</motion.div>
+                    </motion.div>
+                  )}
+                </>
+              ) : (
+                <div style={{ textAlign: "center", color: "#334" }}>
+                  <div style={{ fontSize: 36, marginBottom: 6 }}>🎬</div>
+                  <div style={{ fontSize: 11, letterSpacing: 1 }}>Video yuklang</div>
+                </div>
+              )}
+            </div>
+            {/* Time display */}
+            <div style={{
+              position: "absolute", bottom: 8, right: 8,
+              background: "rgba(0,0,0,0.6)", borderRadius: 6,
+              padding: "2px 8px", fontSize: 10, color: "#00d4ff",
+              fontFamily: "'Orbitron',sans-serif",
+            }}>
+              {fmtTime(currentTime)} / {fmtTime(project.duration)}
+            </div>
+          </div>
+
+          {/* Side controls */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {/* Aspect Ratio */}
+            <Glass style={{ padding: 8, borderRadius: 14 }}>
+              <div style={{ fontSize: 9, color: "#556", marginBottom: 4, textAlign: "center", letterSpacing: 1 }}>RATIO</div>
+              {ASPECT_RATIOS.map((r) => (
+                <motion.div
+                  key={r.id}
+                  whileTap={{ scale: 0.93 }}
+                  onClick={() => setProject((p) => ({ ...p, aspectRatio: r.id }))}
+                  style={{
+                    padding: "4px 8px", borderRadius: 8, marginBottom: 3,
+                    background: project.aspectRatio === r.id ? "rgba(0,180,255,0.2)" : "transparent",
+                    border: `1px solid ${project.aspectRatio === r.id ? "rgba(0,180,255,0.5)" : "transparent"}`,
+                    fontSize: 10, color: project.aspectRatio === r.id ? "#00d4ff" : "#556",
+                    cursor: "pointer", textAlign: "center",
+                  }}
+                >
+                  {r.label}
+                </motion.div>
+              ))}
+            </Glass>
+
+            {/* Playback */}
+            <Glass style={{ padding: 8, borderRadius: 14, display: "flex", flexDirection: "column", gap: 4 }}>
+              <motion.button whileTap={{ scale: 0.9 }}
+                onClick={() => setPlaying((p) => !p)}
+                style={{
+                  width: 36, height: 36, borderRadius: "50%",
+                  background: playing ? "rgba(255,60,80,0.2)" : "rgba(0,180,255,0.2)",
+                  border: `2px solid ${playing ? "rgba(255,60,80,0.6)" : "rgba(0,180,255,0.6)"}`,
+                  color: "#fff", fontSize: 14, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >{playing ? "⏸" : "▶"}</motion.button>
+              <motion.button whileTap={{ scale: 0.9 }}
+                onClick={() => { setCurrentTime(0); setPlaying(false); }}
+                style={{
+                  width: 36, height: 36, borderRadius: "50%",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#778", fontSize: 14, cursor: "pointer",
+                }}
+              >⏮</motion.button>
+            </Glass>
+
+            {/* Volume */}
+            <Glass style={{ padding: "8px 6px", borderRadius: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div style={{ fontSize: 14 }}>🔊</div>
+              <input
+                type="range" min={0} max={100} value={volume}
+                onChange={(e) => setVolume(+e.target.value)}
+                style={{ writingMode: "vertical-lr", direction: "rtl", height: 60, width: 4 }}
+              />
+              <div style={{ fontSize: 9, color: "#556" }}>{volume}</div>
+            </Glass>
+          </div>
+        </div>
+
+        {/* ── TOOL PANEL ── */}
+        <AnimatePresence>
+          {activeTool && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ overflow: "hidden", flexShrink: 0 }}
+            >
+              <Glass style={{ margin: "4px 10px", padding: 12, borderRadius: 16 }}>
+                {/* FILTER */}
+                {activeTool === "filter" && activeClip && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>FILTRLAR</div>
+                    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                      {FILTERS.map((f) => (
+                        <motion.div key={f.id} whileTap={{ scale: 0.92 }}
+                          onClick={() => applyFilter(activeClip.id, f.id)}
+                          style={{
+                            flexShrink: 0, width: 60, textAlign: "center", cursor: "pointer",
+                          }}>
+                          <div style={{
+                            width: 56, height: 56, borderRadius: 12,
+                            background: "#111",
+                            border: `2px solid ${activeClip.filter === f.id ? "#00b4ff" : "rgba(255,255,255,0.1)"}`,
+                            marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 18, filter: f.style || "none",
+                            boxShadow: activeClip.filter === f.id ? "0 0 14px #00b4ff66" : "none",
+                          }}>🎬</div>
+                          <div style={{ fontSize: 9, color: activeClip.filter === f.id ? "#00d4ff" : "#556" }}>{f.label}</div>
+                        </motion.div>
+                      ))}
+                    </div>
+                    {/* Adjust sliders */}
+                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {[
+                        { label: "Brightness", val: brightness, set: setBrightness, min: 50, max: 200 },
+                        { label: "Contrast", val: contrast, set: setContrast, min: 50, max: 200 },
+                        { label: "Saturation", val: saturation, set: setSaturation, min: 0, max: 300 },
+                        { label: "Blur", val: blurAmount, set: setBlurAmount, min: 0, max: 20 },
+                      ].map((s) => (
+                        <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 10, color: "#778", width: 72 }}>{s.label}</div>
+                          <input type="range" min={s.min} max={s.max} value={s.val}
+                            onChange={(e) => s.set(+e.target.value)} style={{ flex: 1 }} />
+                          <div style={{ fontSize: 10, color: "#00d4ff", width: 30, textAlign: "right" }}>{s.val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* TRIM */}
+                {activeTool === "trim" && activeClip && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>TRIM — {activeClip.label}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 10, color: "#778", width: 60 }}>Start</div>
+                        <input type="range" min={0} max={activeClip.duration} step={0.1}
+                          value={activeClip.start}
+                          onChange={(e) => trimClip(activeClip.id, +e.target.value, activeClip.end)}
+                          style={{ flex: 1 }} />
+                        <div style={{ fontSize: 10, color: "#00d4ff", width: 40 }}>{fmtTime(activeClip.start)}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 10, color: "#778", width: 60 }}>End</div>
+                        <input type="range" min={0} max={activeClip.duration} step={0.1}
+                          value={activeClip.end}
+                          onChange={(e) => trimClip(activeClip.id, activeClip.start, +e.target.value)}
+                          style={{ flex: 1 }} />
+                        <div style={{ fontSize: 10, color: "#00d4ff", width: 40 }}>{fmtTime(activeClip.end)}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                      <NeonBtn small onClick={() => splitClip(selectedClip)}>⚡ Split here</NeonBtn>
+                      <NeonBtn small onClick={() => duplicateClip(selectedClip)}>📋 Duplicate</NeonBtn>
+                      <NeonBtn small danger onClick={() => deleteClip(selectedClip)}>🗑 Delete</NeonBtn>
+                    </div>
+                  </div>
+                )}
+
+                {/* SPEED */}
+                {activeTool === "speed" && activeClip && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>TEZLIK</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {SPEEDS.map((s) => (
+                        <NeonBtn key={s.val} small active={activeClip.speed === s.val}
+                          onClick={() => applySpeed(activeClip.id, s.val)}>
+                          {s.label}
+                        </NeonBtn>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 10, color: "#556" }}>
+                      {activeClip.speed < 1 ? "🐌 Slow Motion" : activeClip.speed > 1 ? "🚀 Fast Motion" : "▶ Normal"}
+                    </div>
+                  </div>
+                )}
+
+                {/* TEXT */}
+                {activeTool === "text" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>MATN QO'SHISH</div>
+                    <input
+                      value={newText}
+                      onChange={(e) => setNewText(e.target.value)}
+                      placeholder="Matn kiriting..."
+                      style={{
+                        width: "100%", padding: "8px 12px", borderRadius: 10,
+                        background: "rgba(255,255,255,0.06)", border: "1px solid rgba(0,180,255,0.3)",
+                        color: "#e8eaff", fontSize: 13, outline: "none", marginBottom: 8,
+                        fontFamily: "'Rajdhani',sans-serif",
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                      <div style={{ fontSize: 10, color: "#778" }}>Rang:</div>
+                      <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)}
+                        style={{ width: 32, height: 28, border: "none", borderRadius: 6, background: "none", cursor: "pointer" }} />
+                      <div style={{ fontSize: 10, color: "#778" }}>Hajm:</div>
+                      <input type="range" min={12} max={80} value={textSize}
+                        onChange={(e) => setTextSize(+e.target.value)} style={{ width: 80 }} />
+                      <div style={{ fontSize: 10, color: "#00d4ff" }}>{textSize}px</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#778", marginBottom: 6 }}>Animatsiya:</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                      {TEXT_ANIMATIONS.map((a) => (
+                        <NeonBtn key={a.id} small active={textAnim === a.id}
+                          onClick={() => setTextAnim(a.id)}>{a.label}</NeonBtn>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <NeonBtn onClick={addText} active>✍️ Qo'shish</NeonBtn>
+                      {project.textLayers.length > 0 && (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {project.textLayers.map((l) => (
+                            <div key={l.id} style={{
+                              display: "flex", alignItems: "center", gap: 4, padding: "3px 8px",
+                              borderRadius: 8, background: "rgba(255,255,255,0.06)",
+                              border: "1px solid rgba(0,180,255,0.2)", fontSize: 10, color: "#aac",
+                            }}>
+                              {l.text.slice(0, 10)}
+                              <motion.span whileTap={{ scale: 0.8 }} onClick={() => deleteText(l.id)}
+                                style={{ cursor: "pointer", color: "#f66", marginLeft: 2 }}>×</motion.span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* MUSIC */}
+                {activeTool === "music" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>MUSIQA</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      <NeonBtn active onClick={() => audioInputRef.current?.click()}>🎵 Audio yuklash</NeonBtn>
+                      <input ref={audioInputRef} type="file" accept="audio/*" onChange={handleAudioUpload} style={{ display: "none" }} />
+                    </div>
+                    {project.audioClips.map((a) => (
+                      <div key={a.id} style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+                        borderRadius: 10, background: "rgba(0,180,255,0.06)",
+                        border: "1px solid rgba(0,180,255,0.2)", marginBottom: 6,
+                      }}>
+                        <div style={{ fontSize: 14 }}>🎵</div>
+                        <div style={{ flex: 1, fontSize: 11, color: "#aac" }}>{a.label}</div>
+                        <div style={{ fontSize: 10, color: "#556" }}>{fmtTime(a.duration)}</div>
+                        <motion.div whileTap={{ scale: 0.8 }}
+                          onClick={() => {
+                            pushUndo(project);
+                            setProject((p) => ({ ...p, audioClips: p.audioClips.filter((x) => x.id !== a.id) }));
+                          }}
+                          style={{ cursor: "pointer", color: "#f66", fontSize: 14 }}>×</motion.div>
+                      </div>
+                    ))}
+                    {!project.audioClips.length && (
+                      <div style={{ fontSize: 11, color: "#445", textAlign: "center", padding: 12 }}>
+                        Audio yo'q. Musiqa qo'shing
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* STICKER */}
+                {activeTool === "sticker" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>STICKER & GIF</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {STICKERS.map((s) => (
+                        <motion.div key={s} whileTap={{ scale: 0.8 }} whileHover={{ scale: 1.2 }}
+                          onClick={() => addSticker(s)}
+                          style={{ fontSize: 28, cursor: "pointer" }}>
+                          {s}
+                        </motion.div>
+                      ))}
+                    </div>
+                    {project.stickerLayers.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 10, color: "#556", marginBottom: 4 }}>Qo'shilgan:</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {project.stickerLayers.map((s) => (
+                            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 6px", borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(0,180,255,0.15)" }}>
+                              <span style={{ fontSize: 16 }}>{s.emoji}</span>
+                              <motion.span whileTap={{ scale: 0.8 }}
+                                onClick={() => { pushUndo(project); setProject((p) => ({ ...p, stickerLayers: p.stickerLayers.filter((x) => x.id !== s.id) })); }}
+                                style={{ cursor: "pointer", color: "#f66", fontSize: 12 }}>×</motion.span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TRANSITION */}
+                {activeTool === "transition" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>TRANSITION EFFEKTLAR</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {TRANSITIONS.map((t) => (
+                        <motion.div key={t.id} whileTap={{ scale: 0.92 }}
+                          onClick={() => {
+                            setActiveTransition(t.id);
+                            if (activeClip) {
+                              pushUndo(project);
+                              setProject((p) => ({ ...p, clips: p.clips.map((c) => c.id === activeClip.id ? { ...c, transition: t.id } : c) }));
+                            }
+                          }}
+                          style={{
+                            padding: "8px 14px", borderRadius: 10, cursor: "pointer",
+                            background: activeTransition === t.id ? "rgba(0,180,255,0.2)" : "rgba(255,255,255,0.04)",
+                            border: `1px solid ${activeTransition === t.id ? "rgba(0,180,255,0.6)" : "rgba(255,255,255,0.08)"}`,
+                            textAlign: "center", minWidth: 60,
+                          }}>
+                          <div style={{ fontSize: 18 }}>{t.icon}</div>
+                          <div style={{ fontSize: 9, color: activeTransition === t.id ? "#00d4ff" : "#556", marginTop: 2 }}>{t.label}</div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* BLUR */}
+                {activeTool === "blur" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>BLUR EFFEKT</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ fontSize: 10, color: "#778", width: 60 }}>Miqdor</div>
+                      <input type="range" min={0} max={20} value={blurAmount}
+                        onChange={(e) => setBlurAmount(+e.target.value)} style={{ flex: 1 }} />
+                      <div style={{ fontSize: 12, color: "#00d4ff", width: 40 }}>{blurAmount}px</div>
+                    </div>
+                    <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                      {[0, 2, 5, 10, 15].map((v) => (
+                        <NeonBtn key={v} small active={blurAmount === v} onClick={() => setBlurAmount(v)}>{v}px</NeonBtn>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* CHROMA KEY */}
+                {activeTool === "chroma" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>GREEN SCREEN (CHROMA KEY)</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <NeonBtn active={chromaEnabled} onClick={() => setChromaEnabled((v) => !v)}>
+                        {chromaEnabled ? "🟢 Yoqilgan" : "⭕ O'chiq"}
+                      </NeonBtn>
+                      <div style={{ fontSize: 11, color: "#556" }}>
+                        {chromaEnabled ? "Yashil fon olib tashlanmoqda..." : "Chroma key ni yoqing"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* KEYFRAME */}
+                {activeTool === "keyframe" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>KEYFRAME ANIMATSIYA</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <NeonBtn active onClick={() => {
+                        const kf = { id: uid(), time: currentTime, clipId: selectedClip, props: { scale: 1, x: 0, y: 0, opacity: 1 } };
+                        pushUndo(project);
+                        setProject((p) => ({ ...p, keyframes: [...p.keyframes, kf] }));
+                        notify(`◆ Keyframe qo'shildi: ${fmtTime(currentTime)}`);
+                      }}>◆ Keyframe qo'shish</NeonBtn>
+                    </div>
+                    {project.keyframes.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        {project.keyframes.map((kf) => (
+                          <div key={kf.id} style={{
+                            display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+                            borderRadius: 8, background: "rgba(0,180,255,0.08)",
+                            border: "1px solid rgba(0,180,255,0.15)", marginBottom: 4,
+                          }}>
+                            <div style={{ fontSize: 10 }}>◆</div>
+                            <div style={{ fontSize: 10, color: "#00d4ff" }}>{fmtTime(kf.time)}</div>
+                            <motion.div whileTap={{ scale: 0.8 }}
+                              onClick={() => setProject((p) => ({ ...p, keyframes: p.keyframes.filter((k) => k.id !== kf.id) }))}
+                              style={{ marginLeft: "auto", color: "#f66", cursor: "pointer", fontSize: 12 }}>×</motion.div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ADJUST */}
+                {activeTool === "adjust" && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#556", marginBottom: 8, letterSpacing: 1 }}>SOZLAMALAR</div>
+                    {[
+                      { label: "Brightness", val: brightness, set: setBrightness, min: 50, max: 200 },
+                      { label: "Contrast", val: contrast, set: setContrast, min: 50, max: 200 },
+                      { label: "Saturation", val: saturation, set: setSaturation, min: 0, max: 300 },
+                    ].map((s) => (
+                      <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, color: "#778", width: 72 }}>{s.label}</div>
+                        <input type="range" min={s.min} max={s.max} value={s.val}
+                          onChange={(e) => s.set(+e.target.value)} style={{ flex: 1 }} />
+                        <div style={{ fontSize: 10, color: "#00d4ff", width: 36, textAlign: "right" }}>{s.val}%</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Glass>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── TOOLS TOOLBAR ── */}
+        <div style={{
+          overflowX: "auto", padding: "8px 10px", flexShrink: 0,
+          borderTop: "1px solid rgba(0,180,255,0.08)",
+        }}>
+          <div style={{ display: "flex", gap: 6, minWidth: "max-content" }}>
+            <motion.div
+              whileTap={{ scale: 0.9 }}
+              onClick={() => { fileInputRef.current?.click(); }}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                padding: "8px 12px", borderRadius: 14, cursor: "pointer",
+                background: "linear-gradient(135deg,rgba(0,180,255,0.2),rgba(0,80,200,0.1))",
+                border: "1.5px solid rgba(0,180,255,0.5)",
+                boxShadow: "0 0 16px rgba(0,180,255,0.2)",
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ fontSize: 20 }}>➕</span>
+              <span style={{ fontSize: 9, color: "#00d4ff", marginTop: 2, fontWeight: 700 }}>Video</span>
+            </motion.div>
+            <input ref={fileInputRef} type="file" accept="video/*" multiple onChange={handleVideoUpload} style={{ display: "none" }} />
+
+            {TOOLS.map((tool) => (
+              <motion.div
+                key={tool.id}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setActiveTool(activeTool === tool.id ? null : tool.id)}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center",
+                  padding: "8px 12px", borderRadius: 14, cursor: "pointer",
+                  background: activeTool === tool.id
+                    ? "linear-gradient(135deg,rgba(0,180,255,0.2),rgba(0,80,200,0.1))"
+                    : "rgba(255,255,255,0.04)",
+                  border: `1.5px solid ${activeTool === tool.id ? "rgba(0,180,255,0.6)" : "rgba(255,255,255,0.08)"}`,
+                  boxShadow: activeTool === tool.id ? "0 0 16px rgba(0,180,255,0.2)" : "none",
+                  flexShrink: 0,
+                  transition: "all 0.2s",
+                }}
+              >
+                <span style={{ fontSize: 18 }}>{tool.icon}</span>
+                <span style={{ fontSize: 9, color: activeTool === tool.id ? "#00d4ff" : "#556", marginTop: 2, fontWeight: 600 }}>
+                  {tool.label}
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── TIMELINE ── */}
+        <div style={{
+          flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
+          borderTop: "1px solid rgba(0,180,255,0.08)",
+          background: "rgba(0,5,15,0.6)",
+        }}>
+          {/* Timeline header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid rgba(0,180,255,0.08)" }}>
+            <div style={{ fontSize: 10, color: "#556", letterSpacing: 1 }}>TIMELINE</div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 10, color: "#556" }}>Zoom</span>
+              <input type="range" min={0.5} max={3} step={0.1} value={timelineZoom}
+                onChange={(e) => setTimelineZoom(+e.target.value)}
+                style={{ width: 70 }} />
+              <span style={{ fontSize: 10, color: "#00d4ff" }}>{timelineZoom.toFixed(1)}x</span>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <NeonBtn small active={activeTab === "video"} onClick={() => setActiveTab("video")}>Video</NeonBtn>
+              <NeonBtn small active={activeTab === "audio"} onClick={() => setActiveTab("audio")}>Audio</NeonBtn>
+              <NeonBtn small active={activeTab === "text"} onClick={() => setActiveTab("text")}>Text</NeonBtn>
+            </div>
+          </div>
+
+          {/* Scrollable timeline area */}
+          <div style={{ flex: 1, overflowX: "auto", overflowY: "hidden", padding: "10px 12px" }}>
+            <div
+              ref={timelineRef}
+              onClick={handleTimelineClick}
+              style={{ width: TIMELINE_WIDTH, minHeight: 120, position: "relative", cursor: "crosshair" }}
+            >
+              {/* Time ruler */}
+              <div style={{ height: 20, position: "relative", marginBottom: 6, borderBottom: "1px solid rgba(0,180,255,0.15)" }}>
+                {Array.from({ length: Math.ceil(project.duration) + 1 }).map((_, i) => (
+                  <div key={i} style={{
+                    position: "absolute",
+                    left: project.duration > 0 ? (i / project.duration) * TIMELINE_WIDTH : i * 60,
+                    top: 0, height: "100%",
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                  }}>
+                    <div style={{ width: 1, height: i % 5 === 0 ? 12 : 6, background: "rgba(0,180,255,0.3)" }} />
+                    {i % 5 === 0 && <div style={{ fontSize: 8, color: "#445", marginTop: 1 }}>{fmtTime(i)}</div>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Playhead */}
+              {project.duration > 0 && (
+                <motion.div
+                  style={{
+                    position: "absolute",
+                    left: (currentTime / project.duration) * TIMELINE_WIDTH,
+                    top: 0, bottom: 0, width: 2,
+                    background: "#00d4ff",
+                    zIndex: 50,
+                    pointerEvents: "none",
+                    boxShadow: "0 0 8px #00d4ff",
+                  }}
+                >
+                  <div style={{ width: 8, height: 8, background: "#00d4ff", borderRadius: "50%", marginLeft: -3, marginTop: 20 }} />
+                </motion.div>
+              )}
+
+              {/* Video track */}
+              {(activeTab === "video" || activeTab === "all") && (
+                <div style={{ position: "relative", height: 50, marginBottom: 6 }}>
+                  <div style={{ position: "absolute", left: -8, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: "#334", whiteSpace: "nowrap" }}></div>
+                  {project.clips.map((clip) => (
+                    <TimelineTrack
+                      key={clip.id}
+                      clip={clip}
+                      totalDuration={project.duration}
+                      containerWidth={TIMELINE_WIDTH}
+                      selected={selectedClip === clip.id}
+                      color="#00b4ff"
+                      onClick={() => { setSelectedClip(clip.id); setSelectedLayer(null); }}
+                      onDragEnd={(dx) => {
+                        if (!project.duration) return;
+                        const dt = (dx / TIMELINE_WIDTH) * project.duration;
+                        pushUndo(project);
+                        setProject((p) => ({
+                          ...p,
+                          clips: p.clips.map((c) =>
+                            c.id === clip.id
+                              ? { ...c, start: Math.max(0, c.start + dt), end: Math.max(dt, c.end + dt) }
+                              : c
+                          ),
+                        }));
+                      }}
+                    />
+                  ))}
+                  {!project.clips.length && (
+                    <div style={{
+                      height: 44, borderRadius: 10,
+                      border: "1.5px dashed rgba(0,180,255,0.2)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 10, color: "#334",
+                    }}>
+                      Video yuklanmagan
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Audio track */}
+              {(activeTab === "audio") && (
+                <div style={{ position: "relative", height: 50, marginBottom: 6 }}>
+                  {project.audioClips.map((clip) => (
+                    <TimelineTrack
+                      key={clip.id}
+                      clip={clip}
+                      totalDuration={Math.max(project.duration, clip.end)}
+                      containerWidth={TIMELINE_WIDTH}
+                      selected={false}
+                      color="#a855f7"
+                    />
+                  ))}
+                  {!project.audioClips.length && (
+                    <div style={{
+                      height: 44, borderRadius: 10,
+                      border: "1.5px dashed rgba(168,85,247,0.2)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 10, color: "#334",
+                    }}>
+                      Audio yo'q — musiqa qo'shing
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Text layers track */}
+              {(activeTab === "text") && (
+                <div style={{ position: "relative", height: 50, marginBottom: 6 }}>
+                  {project.textLayers.map((layer) => (
+                    <div
+                      key={layer.id}
+                      onClick={() => setSelectedLayer(layer.id)}
+                      style={{
+                        position: "absolute",
+                        left: project.duration > 0 ? (layer.start / project.duration) * TIMELINE_WIDTH : 0,
+                        width: project.duration > 0 ? ((layer.end - layer.start) / project.duration) * TIMELINE_WIDTH : 60,
+                        height: 36, top: 7,
+                        borderRadius: 8,
+                        background: `rgba(255,200,0,0.12)`,
+                        border: `2px solid rgba(255,200,0,0.5)`,
+                        display: "flex", alignItems: "center", padding: "0 8px",
+                        cursor: "pointer",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <span style={{ fontSize: 10, color: "#ffcc00", whiteSpace: "nowrap" }}>T {layer.text}</span>
+                    </div>
+                  ))}
+                  {!project.textLayers.length && (
+                    <div style={{
+                      height: 44, borderRadius: 10,
+                      border: "1.5px dashed rgba(255,200,0,0.2)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 10, color: "#334",
+                    }}>
+                      Matn yo'q
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ══ EXPORT MODAL ══ */}
+      <AnimatePresence>
+        {showExport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+              display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200,
+              backdropFilter: "blur(8px)",
+            }}
+            onClick={() => !exporting && setShowExport(false)}
+          >
+            <motion.div
+              initial={{ y: 200 }}
+              animate={{ y: 0 }}
+              exit={{ y: 200 }}
+              transition={{ type: "spring", damping: 22 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%", maxWidth: 460,
+                background: "linear-gradient(180deg,rgba(8,12,28,0.98) 0%,rgba(4,8,20,0.99) 100%)",
+                borderRadius: "24px 24px 0 0",
+                border: "1px solid rgba(0,180,255,0.2)",
+                padding: "20px 18px 32px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#00d4ff", fontFamily: "'Orbitron',sans-serif" }}>
+                  🎬 Export
+                </div>
+                {!exporting && (
+                  <motion.div whileTap={{ scale: 0.8 }} onClick={() => setShowExport(false)}
+                    style={{ cursor: "pointer", color: "#556", fontSize: 20 }}>×</motion.div>
+                )}
+              </div>
+
+              {exporting ? (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <div style={{ fontSize: 13, color: "#aac", marginBottom: 12 }}>Export qilinmoqda...</div>
+                  <div style={{ height: 6, background: "rgba(0,180,255,0.1)", borderRadius: 6, overflow: "hidden" }}>
+                    <motion.div
+                      animate={{ width: `${exportProgress}%` }}
+                      style={{ height: "100%", background: "linear-gradient(90deg,#00b4ff,#0055ff)", borderRadius: 6 }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#00d4ff", marginTop: 8, fontFamily: "'Orbitron',sans-serif" }}>
+                    {Math.round(exportProgress)}%
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: "#445", marginBottom: 10, letterSpacing: 1 }}>FORMAT TANLANG</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {EXPORT_PRESETS.map((preset) => (
+                      <motion.div
+                        key={preset.id}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleExport(preset)}
+                        style={{
+                          padding: 14, borderRadius: 16, cursor: "pointer",
+                          background: "rgba(0,180,255,0.06)",
+                          border: "1.5px solid rgba(0,180,255,0.25)",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#00d4ff", marginBottom: 4 }}>{preset.label}</div>
+                        <div style={{ fontSize: 10, color: "#556" }}>{preset.size}</div>
+                        <div style={{ fontSize: 10, color: "#445" }}>{preset.bitrate}</div>
+                      </motion.div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 10, color: "#334", textAlign: "center" }}>
+                    {project.clips.length} ta video · {fmtTime(project.duration)} · {project.textLayers.length} matn · {project.audioClips.length} audio
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ PROJECTS MODAL ══ */}
+      <AnimatePresence>
+        {showProjects && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+              display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200,
+              backdropFilter: "blur(8px)",
+            }}
+            onClick={() => setShowProjects(false)}
+          >
+            <motion.div
+              initial={{ y: 200 }}
+              animate={{ y: 0 }}
+              exit={{ y: 200 }}
+              transition={{ type: "spring", damping: 22 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%", maxWidth: 460,
+                background: "linear-gradient(180deg,rgba(8,12,28,0.98),rgba(4,8,20,0.99))",
+                borderRadius: "24px 24px 0 0",
+                border: "1px solid rgba(0,180,255,0.2)",
+                padding: "20px 18px 32px",
+                maxHeight: "70vh", overflow: "hidden", display: "flex", flexDirection: "column",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#00d4ff", fontFamily: "'Orbitron',sans-serif" }}>📂 Loyihalar</div>
+                <motion.div whileTap={{ scale: 0.8 }} onClick={() => setShowProjects(false)}
+                  style={{ cursor: "pointer", color: "#556", fontSize: 20 }}>×</motion.div>
+              </div>
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {projects.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "#334", fontSize: 12, padding: 24 }}>
+                    Hali saqlangan loyiha yo'q.<br />
+                    <span style={{ color: "#445" }}>Loyihangizni saqlab qo'ying.</span>
+                  </div>
+                ) : (
+                  projects.map((p) => (
+                    <motion.div key={p.id} whileTap={{ scale: 0.97 }}
+                      onClick={() => loadProject(p)}
+                      style={{
+                        padding: "12px 14px", borderRadius: 14, marginBottom: 8, cursor: "pointer",
+                        background: "rgba(0,180,255,0.06)",
+                        border: "1px solid rgba(0,180,255,0.18)",
+                        display: "flex", alignItems: "center", gap: 10,
+                      }}>
+                      <div style={{ fontSize: 22 }}>🎬</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#dde" }}>{p.name}</div>
+                        <div style={{ fontSize: 9, color: "#445", marginTop: 2 }}>
+                          {p.clips.length} clip · {fmtTime(p.duration)} · {new Date(p.savedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div style={{ color: "#00d4ff", fontSize: 16 }}>▶</div>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <NeonBtn active onClick={() => {
+                  pushUndo(project);
+                  setProject({ id: uid(), name: "Yangi loyiha", duration: 0, aspectRatio: "16:9", clips: [], audioClips: [], textLayers: [], stickerLayers: [], keyframes: [] });
+                  setShowProjects(false);
+                  setShowUpload(true);
+                  notify("🆕 Yangi loyiha yaratildi");
+                }}>+ Yangi loyiha</NeonBtn>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ UPLOAD PROMPT ══ */}
+      <AnimatePresence>
+        {showUpload && !hasContent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,5,15,0.96)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 300, flexDirection: "column", gap: 20,
+            }}
+          >
+            <motion.div
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 2.5, repeat: Infinity }}
+              style={{ fontSize: 64 }}
+            >🎬</motion.div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#00d4ff", fontFamily: "'Orbitron',sans-serif", letterSpacing: 2 }}>
+                VidEdit Pro
+              </div>
+              <div style={{ fontSize: 12, color: "#445", marginTop: 6, letterSpacing: 1 }}>
+                Telegram Mini App · Professional Video Editor
+              </div>
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.93 }}
+              whileHover={{ scale: 1.05 }}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: "14px 36px", borderRadius: 50,
+                background: "linear-gradient(135deg,#00b4ff,#0055ff)",
+                border: "none", color: "#fff", fontSize: 15, fontWeight: 700,
+                cursor: "pointer", boxShadow: "0 0 40px #00b4ff66",
+                fontFamily: "'Orbitron',sans-serif", letterSpacing: 1,
+              }}
+            >
+              📹 Video yuklash
+            </motion.button>
+            <div style={{ fontSize: 10, color: "#334", letterSpacing: 1 }}>
+              MP4, MOV, AVI, WebM · 4K ga qadar
+            </div>
+
+            {/* Feature pills */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxWidth: 320, justifyContent: "center", marginTop: 8 }}>
+              {["✂️ Trim", "⚡ Split", "🚀 Speed", "🎵 Music", "✨ Filter", "T Text", "😊 Sticker", "◆ Keyframe", "↔ Transition", "🟢 Chroma"].map((f) => (
+                <div key={f} style={{
+                  padding: "4px 12px", borderRadius: 20, fontSize: 10,
+                  background: "rgba(0,180,255,0.08)",
+                  border: "1px solid rgba(0,180,255,0.2)",
+                  color: "#556",
+                }}>{f}</div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <NeonBtn small onClick={() => setShowProjects(true)}>📂 Loyihalar</NeonBtn>
+              <NeonBtn small onClick={() => setShowUpload(false)}>Demo ko'rish</NeonBtn>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
