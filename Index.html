@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VidEdit Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:#08090d;font-family:'Segoe UI',sans-serif;color:#e8eaff;overflow-x:hidden}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-thumb{background:#00b4ff44;border-radius:4px}
+  input[type=range]{-webkit-appearance:none;height:4px;border-radius:4px;background:rgba(0,180,255,0.2);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#00b4ff;cursor:pointer}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes bounceIn{0%{transform:scale(0.3)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .tool-btn:active{transform:scale(0.93)}
+  .neon-glow{box-shadow:0 0 20px rgba(0,180,255,0.4)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect,useCallback}=React;
+
+const TOOLS=[
+  {id:"trim",icon:"✂️",label:"Trim"},
+  {id:"split",icon:"⚡",label:"Split"},
+  {id:"speed",icon:"🚀",label:"Speed"},
+  {id:"text",icon:"T",label:"Text"},
+  {id:"music",icon:"🎵",label:"Music"},
+  {id:"filter",icon:"✨",label:"Filter"},
+  {id:"sticker",icon:"😊",label:"Sticker"},
+  {id:"blur",icon:"◎",label:"Blur"},
+  {id:"transition",icon:"↔",label:"Trans"},
+  {id:"adjust",icon:"⚙️",label:"Adjust"},
+];
+
+const FILTERS=[
+  {id:"none",label:"Original",style:""},
+  {id:"vivid",label:"Vivid",style:"saturate(1.8) contrast(1.1)"},
+  {id:"matte",label:"Matte",style:"contrast(0.85) brightness(1.1) saturate(0.8)"},
+  {id:"cool",label:"Cool",style:"hue-rotate(200deg) saturate(1.2)"},
+  {id:"warm",label:"Warm",style:"hue-rotate(-20deg) saturate(1.3) brightness(1.05)"},
+  {id:"bw",label:"B&W",style:"grayscale(1) contrast(1.2)"},
+  {id:"cinema",label:"Cinema",style:"contrast(1.3) brightness(0.9) saturate(0.85)"},
+  {id:"neon",label:"Neon",style:"saturate(2) brightness(1.1) contrast(1.2)"},
+  {id:"retro",label:"Retro",style:"sepia(0.6) contrast(1.1)"},
+];
+
+const SPEEDS=[0.25,0.5,0.75,1,1.5,2,4];
+const STICKERS=["🔥","⭐","💯","🎉","❤️","😍","✨","🎵","💫","🌈","👑","🦋"];
+const TRANSITIONS=[
+  {id:"none",label:"None",icon:"✗"},
+  {id:"fade",label:"Fade",icon:"○"},
+  {id:"slide",label:"Slide",icon:"→"},
+  {id:"zoom",label:"Zoom",icon:"⊕"},
+  {id:"flash",label:"Flash",icon:"⚡"},
+];
+const EXPORT_PRESETS=[
+  {id:"720p",label:"720p HD",size:"1280×720"},
+  {id:"1080p",label:"1080p FHD",size:"1920×1080"},
+  {id:"4k",label:"4K UHD",size:"3840×2160"},
+  {id:"reels",label:"Reels/TikTok",size:"1080×1920"},
+];
+
+const uid=()=>Math.random().toString(36).slice(2,9);
+const fmtTime=s=>{
+  const m=Math.floor(s/60),sec=Math.floor(s%60),ms=Math.floor((s%1)*10);
+  return `${m}:${sec.toString().padStart(2,"0")}.${ms}`;
+};
+
+function App(){
+  const [clips,setClips]=useState([]);
+  const [audioClips,setAudioClips]=useState([]);
+  const [textLayers,setTextLayers]=useState([]);
+  const [stickerLayers,setStickerLayers]=useState([]);
+  const [duration,setDuration]=useState(0);
+  const [currentTime,setCurrentTime]=useState(0);
+  const [playing,setPlaying]=useState(false);
+  const [activeTool,setActiveTool]=useState(null);
+  const [selectedClip,setSelectedClip]=useState(null);
+  const [volume,setVolume]=useState(100);
+  const [blurAmount,setBlurAmount]=useState(0);
+  const [brightness,setBrightness]=useState(100);
+  const [contrast,setContrast]=useState(100);
+  const [saturation,setSaturation]=useState(100);
+  const [speed,setSpeed]=useState(1);
+  const [newText,setNewText]=useState("");
+  const [textColor,setTextColor]=useState("#ffffff");
+  const [textSize,setTextSize]=useState(24);
+  const [activeTransition,setActiveTransition]=useState("fade");
+  const [showExport,setShowExport]=useState(false);
+  const [exporting,setExporting]=useState(false);
+  const [exportProgress,setExportProgress]=useState(0);
+  const [notification,setNotification]=useState(null);
+  const [showUpload,setShowUpload]=useState(true);
+  const [aspectRatio,setAspectRatio]=useState("16:9");
+  const [projectName,setProjectName]=useState("My Project");
+  const [undoStack,setUndoStack]=useState([]);
+  const [activeTab,setActiveTab]=useState("video");
+  const [timelineZoom,setTimelineZoom]=useState(1);
+
+  const fileInputRef=useRef();
+  const audioInputRef=useRef();
+  const playTimer=useRef();
+  const videoRef=useRef();
+
+  const TIMELINE_W=600*timelineZoom;
+
+  const notify=(msg,type="info")=>{
+    setNotification({msg,type});
+    setTimeout(()=>setNotification(null),2800);
+  };
+
+  useEffect(()=>{
+    if(playing){
+      playTimer.current=setInterval(()=>{
+        setCurrentTime(t=>{
+          const next=t+0.1*speed;
+          if(next>=duration){setPlaying(false);return 0;}
+          return next;
+        });
+      },100);
+    }else clearInterval(playTimer.current);
+    return()=>clearInterval(playTimer.current);
+  },[playing,duration,speed]);
+
+  const handleVideoUpload=e=>{
+    const files=Array.from(e.target.files);
+    if(!files.length)return;
+    files.forEach(file=>{
+      const url=URL.createObjectURL(file);
+      const vid=document.createElement("video");
+      vid.src=url;
+      vid.onloadedmetadata=()=>{
+        const dur=vid.duration;
+        const existing=clips.reduce((acc,c)=>Math.max(acc,c.end),0);
+        const clip={id:uid(),url,label:file.name.replace(/\.[^.]+$/,""),start:existing,end:existing+dur,duration:dur,filter:"none",speed:1};
+        setClips(c=>{
+          const nc=[...c,clip];
+          setDuration(nc.reduce((a,x)=>Math.max(a,x.end),0));
+          return nc;
+        });
+        setShowUpload(false);
+        notify(`📹 ${file.name} qo'shildi`,"success");
+      };
+    });
+  };
+
+  const handleAudioUpload=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const url=URL.createObjectURL(file);
+    const aud=document.createElement("audio");
+    aud.src=url;
+    aud.onloadedmetadata=()=>{
+      setAudioClips(a=>[...a,{id:uid(),url,label:file.name.replace(/\.[^.]+$/,""),start:0,end:aud.duration,duration:aud.duration}]);
+      notify(`🎵 ${file.name} qo'shildi`);
+    };
+  };
+
+  const activeClip=clips.find(c=>c.id===selectedClip);
+
+  const applyFilter=(id,fid)=>setClips(c=>c.map(x=>x.id===id?{...x,filter:fid}:x));
+  const trimClip=(id,s,e)=>setClips(c=>c.map(x=>x.id===id?{...x,start:s,end:e}:x));
+
+  const splitClip=id=>{
+    const clip=clips.find(c=>c.id===id);
+    if(!clip||currentTime<=clip.start||currentTime>=clip.end){notify("To'g'ri pozitsiya tanlang","warn");return;}
+    setClips(c=>c.flatMap(x=>x.id!==id?[x]:[
+      {...x,id:uid(),end:currentTime,label:x.label+" A"},
+      {...x,id:uid(),start:currentTime,label:x.label+" B"},
+    ]));
+    notify("✂️ Kesildi");
+  };
+
+  const deleteClip=id=>{
+    setClips(c=>{const nc=c.filter(x=>x.id!==id);setDuration(nc.reduce((a,x)=>Math.max(a,x.end),0));return nc;});
+    setSelectedClip(null);
+    notify("🗑️ O'chirildi");
+  };
+
+  const addText=()=>{
+    if(!newText.trim())return;
+    setTextLayers(l=>[...l,{id:uid(),text:newText,color:textColor,size:textSize,start:currentTime,end:Math.min(currentTime+3,duration||5),x:50,y:50}]);
+    setNewText("");
+    notify("✍️ Matn qo'shildi");
+  };
+
+  const handleExport=preset=>{
+    setExporting(true);setExportProgress(0);
+    let p=0;
+    const t=setInterval(()=>{
+      p+=Math.random()*8+2;
+      if(p>=100){clearInterval(t);setTimeout(()=>{setExporting(false);setShowExport(false);notify(`🎬 ${preset.label} tayyor!`,"success");},600);}
+      setExportProgress(Math.min(p,100));
+    },180);
+  };
+
+  const videoFilter=[
+    FILTERS.find(f=>f.id===(activeClip?.filter||"none"))?.style||"",
+    blurAmount>0?`blur(${blurAmount}px)`:"",
+    brightness!==100?`brightness(${brightness}%)`:"",
+    contrast!==100?`contrast(${contrast}%)`:"",
+    saturation!==100?`saturate(${saturation}%)`:"",
+  ].filter(Boolean).join(" ")||"none";
+
+  const previewH=aspectRatio==="9:16"?480:aspectRatio==="1:1"?260:148;
+
+  return(
+    <div style={{width:"100%",minHeight:"100vh",background:"#08090d",display:"flex",flexDirection:"column"}}>
+
+      {/* NOTIFICATION */}
+      {notification&&(
+        <div style={{
+          position:"fixed",top:12,left:"50%",transform:"translateX(-50%)",
+          zIndex:9999,padding:"9px 20px",borderRadius:50,
+          background:notification.type==="success"?"rgba(0,220,120,0.15)":notification.type==="warn"?"rgba(255,180,0,0.15)":"rgba(0,180,255,0.15)",
+          border:`1px solid ${notification.type==="success"?"rgba(0,220,120,0.5)":notification.type==="warn"?"rgba(255,180,0,0.5)":"rgba(0,180,255,0.5)"}`,
+          backdropFilter:"blur(20px)",color:"#fff",fontSize:13,fontWeight:600,
+          animation:"slideUp 0.3s ease",whiteSpace:"nowrap",
+          boxShadow:"0 8px 32px rgba(0,0,0,0.5)",
+        }}>{notification.msg}</div>
+      )}
+
+      {/* TOP BAR */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:"rgba(0,5,15,0.98)",borderBottom:"1px solid rgba(0,180,255,0.12)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:32,height:32,borderRadius:10,background:"linear-gradient(135deg,#00b4ff,#0055ff)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,boxShadow:"0 0 16px #00b4ff55"}}>🎬</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#00d4ff",letterSpacing:1}}>VidEdit Pro</div>
+            <input value={projectName} onChange={e=>setProjectName(e.target.value)}
+              style={{background:"none",border:"none",color:"#445",fontSize:10,outline:"none",width:90,cursor:"text"}}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <Btn small onClick={()=>notify("Saqlandi ✅","success")}>💾</Btn>
+          <Btn small onClick={()=>setShowExport(true)} active>Export ▶</Btn>
+        </div>
+      </div>
+
+      {/* PREVIEW */}
+      <div style={{display:"flex",justifyContent:"center",gap:10,padding:"12px 10px 6px",flexShrink:0}}>
+        <div style={{position:"relative"}}>
+          <div style={{
+            width:260,height:previewH,borderRadius:14,overflow:"hidden",
+            background:"#000",border:"2px solid rgba(0,180,255,0.25)",
+            boxShadow:"0 0 40px rgba(0,180,255,0.1)",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            position:"relative",transition:"height 0.3s",
+          }}>
+            {clips.length>0?(
+              <>
+                <video ref={videoRef} src={clips[0].url}
+                  style={{width:"100%",height:"100%",objectFit:"cover",filter:videoFilter}}
+                  muted loop playsInline/>
+                {textLayers.filter(l=>currentTime>=l.start&&currentTime<=l.end).map(l=>(
+                  <div key={l.id} style={{
+                    position:"absolute",left:`${l.x}%`,top:`${l.y}%`,
+                    transform:"translate(-50%,-50%)",color:l.color,fontSize:l.size,
+                    fontWeight:700,textShadow:"0 2px 12px rgba(0,0,0,0.8)",
+                    pointerEvents:"none",animation:"fadeIn 0.5s ease",
+                  }}>{l.text}</div>
+                ))}
+                {stickerLayers.filter(s=>currentTime>=s.start&&currentTime<=s.end).map(s=>(
+                  <div key={s.id} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,transform:"translate(-50%,-50%)",fontSize:36,pointerEvents:"none"}}>{s.emoji}</div>
+                ))}
+                {!playing&&(
+                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.2)"}}>
+                    <div className="tool-btn" onClick={()=>setPlaying(true)}
+                      style={{width:50,height:50,borderRadius:"50%",background:"rgba(0,180,255,0.25)",border:"2px solid rgba(0,180,255,0.6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,cursor:"pointer",boxShadow:"0 0 30px rgba(0,180,255,0.4)"}}>▶</div>
+                  </div>
+                )}
+              </>
+            ):(
+              <div style={{textAlign:"center",color:"#334"}}>
+                <div style={{fontSize:32,marginBottom:4}}>🎬</div>
+                <div style={{fontSize:11}}>Video yuklang</div>
+              </div>
+            )}
+          </div>
+          <div style={{position:"absolute",bottom:8,right:8,background:"rgba(0,0,0,0.65)",borderRadius:6,padding:"2px 8px",fontSize:10,color:"#00d4ff"}}>
+            {fmtTime(currentTime)} / {fmtTime(duration)}
+          </div>
+        </div>
+
+        {/* Side controls */}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {/* Ratio */}
+          <Panel style={{padding:8}}>
+            <div style={{fontSize:9,color:"#445",marginBottom:4,textAlign:"center",letterSpacing:1}}>RATIO</div>
+            {["16:9","9:16","1:1","4:3"].map(r=>(
+              <div key={r} className="tool-btn" onClick={()=>setAspectRatio(r)}
+                style={{padding:"4px 8px",borderRadius:8,marginBottom:3,fontSize:10,textAlign:"center",cursor:"pointer",
+                  background:aspectRatio===r?"rgba(0,180,255,0.2)":"transparent",
+                  color:aspectRatio===r?"#00d4ff":"#445",
+                  border:`1px solid ${aspectRatio===r?"rgba(0,180,255,0.5)":"transparent"}`
+                }}>{r}</div>
+            ))}
+          </Panel>
+
+          {/* Playback */}
+          <Panel style={{padding:8,display:"flex",flexDirection:"column",gap:4,alignItems:"center"}}>
+            <div className="tool-btn" onClick={()=>setPlaying(p=>!p)}
+              style={{width:36,height:36,borderRadius:"50%",background:playing?"rgba(255,60,80,0.2)":"rgba(0,180,255,0.2)",border:`2px solid ${playing?"rgba(255,60,80,0.6)":"rgba(0,180,255,0.6)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer"}}>
+              {playing?"⏸":"▶"}
+            </div>
+            <div className="tool-btn" onClick={()=>{setCurrentTime(0);setPlaying(false);}}
+              style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:"#778"}}>⏮</div>
+          </Panel>
+
+          {/* Volume */}
+          <Panel style={{padding:"8px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <div style={{fontSize:14}}>🔊</div>
+            <input type="range" min={0} max={100} value={volume} onChange={e=>setVolume(+e.target.value)}
+              style={{writingMode:"vertical-lr",direction:"rtl",height:56}}/>
+            <div style={{fontSize:9,color:"#445"}}>{volume}</div>
+          </Panel>
+        </div>
+      </div>
+
+      {/* TOOL PANEL */}
+      {activeTool&&(
+        <Panel style={{margin:"4px 10px",padding:12,animation:"slideUp 0.2s ease"}}>
+
+          {activeTool==="filter"&&activeClip&&(
+            <div>
+              <Label>FILTRLAR</Label>
+              <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+                {FILTERS.map(f=>(
+                  <div key={f.id} className="tool-btn" onClick={()=>applyFilter(activeClip.id,f.id)} style={{flexShrink:0,width:58,textAlign:"center",cursor:"pointer"}}>
+                    <div style={{width:52,height:52,borderRadius:10,background:"#111",border:`2px solid ${activeClip.filter===f.id?"#00b4ff":"rgba(255,255,255,0.08)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,filter:f.style||"none",marginBottom:3,boxShadow:activeClip.filter===f.id?"0 0 12px #00b4ff55":"none"}}>🎬</div>
+                    <div style={{fontSize:9,color:activeClip.filter===f.id?"#00d4ff":"#445"}}>{f.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTool==="trim"&&activeClip&&(
+            <div>
+              <Label>TRIM — {activeClip.label}</Label>
+              <Slider label="Start" min={0} max={activeClip.duration} step={0.1} value={activeClip.start} fmt={fmtTime}
+                onChange={v=>trimClip(activeClip.id,v,activeClip.end)}/>
+              <Slider label="End" min={0} max={activeClip.duration} step={0.1} value={activeClip.end} fmt={fmtTime}
+                onChange={v=>trimClip(activeClip.id,activeClip.start,v)}/>
+              <div style={{display:"flex",gap:6,marginTop:8}}>
+                <Btn small onClick={()=>splitClip(selectedClip)}>⚡ Split</Btn>
+                <Btn small danger onClick={()=>deleteClip(selectedClip)}>🗑 Delete</Btn>
+              </div>
+            </div>
+          )}
+
+          {activeTool==="speed"&&activeClip&&(
+            <div>
+              <Label>TEZLIK</Label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {SPEEDS.map(s=>(
+                  <Btn key={s} small active={activeClip.speed===s}
+                    onClick={()=>{setClips(c=>c.map(x=>x.id===activeClip.id?{...x,speed:s}:x));setSpeed(s);}}>
+                    {s}x
+                  </Btn>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTool==="text"&&(
+            <div>
+              <Label>MATN QO'SHISH</Label>
+              <input value={newText} onChange={e=>setNewText(e.target.value)} placeholder="Matn kiriting..."
+                style={{width:"100%",padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(0,180,255,0.3)",color:"#e8eaff",fontSize:13,outline:"none",marginBottom:8}}/>
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+                <span style={{fontSize:10,color:"#778"}}>Rang:</span>
+                <input type="color" value={textColor} onChange={e=>setTextColor(e.target.value)}
+                  style={{width:32,height:28,border:"none",borderRadius:6,cursor:"pointer"}}/>
+                <span style={{fontSize:10,color:"#778"}}>Hajm:</span>
+                <input type="range" min={12} max={80} value={textSize} onChange={e=>setTextSize(+e.target.value)} style={{width:80}}/>
+                <span style={{fontSize:10,color:"#00d4ff"}}>{textSize}px</span>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <Btn active onClick={addText}>✍️ Qo'shish</Btn>
+              </div>
+              {textLayers.length>0&&(
+                <div style={{marginTop:8,display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {textLayers.map(l=>(
+                    <div key={l.id} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(0,180,255,0.2)",fontSize:10,color:"#aac"}}>
+                      {l.text.slice(0,10)}
+                      <span onClick={()=>setTextLayers(ls=>ls.filter(x=>x.id!==l.id))}
+                        style={{cursor:"pointer",color:"#f66",marginLeft:2,fontSize:12}}>×</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTool==="music"&&(
+            <div>
+              <Label>MUSIQA</Label>
+              <Btn active onClick={()=>audioInputRef.current?.click()}>🎵 Audio yuklash</Btn>
+              <input ref={audioInputRef} type="file" accept="audio/*" onChange={handleAudioUpload} style={{display:"none"}}/>
+              {audioClips.map(a=>(
+                <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:10,background:"rgba(0,180,255,0.06)",border:"1px solid rgba(0,180,255,0.2)",marginTop:8}}>
+                  <span style={{fontSize:14}}>🎵</span>
+                  <span style={{flex:1,fontSize:11,color:"#aac"}}>{a.label}</span>
+                  <span style={{fontSize:10,color:"#445"}}>{fmtTime(a.duration)}</span>
+                  <span onClick={()=>setAudioClips(c=>c.filter(x=>x.id!==a.id))}
+                    style={{cursor:"pointer",color:"#f66",fontSize:14}}>×</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTool==="sticker"&&(
+            <div>
+              <Label>STICKER</Label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                {STICKERS.map(s=>(
+                  <span key={s} className="tool-btn" onClick={()=>{
+                    setStickerLayers(l=>[...l,{id:uid(),emoji:s,x:40+Math.random()*20,y:40+Math.random()*20,size:36,start:currentTime,end:Math.min(currentTime+3,duration||5)}]);
+                    notify(`${s} qo'shildi`);
+                  }} style={{fontSize:28,cursor:"pointer"}}>{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTool==="transition"&&(
+            <div>
+              <Label>TRANSITION</Label>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {TRANSITIONS.map(t=>(
+                  <div key={t.id} className="tool-btn" onClick={()=>setActiveTransition(t.id)}
+                    style={{padding:"8px 14px",borderRadius:10,cursor:"pointer",textAlign:"center",minWidth:60,
+                      background:activeTransition===t.id?"rgba(0,180,255,0.2)":"rgba(255,255,255,0.04)",
+                      border:`1px solid ${activeTransition===t.id?"rgba(0,180,255,0.6)":"rgba(255,255,255,0.08)"}`}}>
+                    <div style={{fontSize:18}}>{t.icon}</div>
+                    <div style={{fontSize:9,color:activeTransition===t.id?"#00d4ff":"#445",marginTop:2}}>{t.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTool==="blur"&&(
+            <div>
+              <Label>BLUR EFFEKT</Label>
+              <Slider label="Miqdor" min={0} max={20} step={1} value={blurAmount} fmt={v=>`${v}px`} onChange={setBlurAmount}/>
+              <div style={{display:"flex",gap:6,marginTop:6}}>
+                {[0,2,5,10,15].map(v=>(
+                  <Btn key={v} small active={blurAmount===v} onClick={()=>setBlurAmount(v)}>{v}px</Btn>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTool==="adjust"&&(
+            <div>
+              <Label>SOZLAMALAR</Label>
+              <Slider label="Brightness" min={50} max={200} value={brightness} fmt={v=>`${v}%`} onChange={setBrightness}/>
+              <Slider label="Contrast" min={50} max={200} value={contrast} fmt={v=>`${v}%`} onChange={setContrast}/>
+              <Slider label="Saturation" min={0} max={300} value={saturation} fmt={v=>`${v}%`} onChange={setSaturation}/>
+            </div>
+          )}
+
+        </Panel>
+      )}
+
+      {/* TOOLBAR */}
+      <div style={{overflowX:"auto",padding:"8px 10px",borderTop:"1px solid rgba(0,180,255,0.08)",flexShrink:0}}>
+        <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
+          <div className="tool-btn" onClick={()=>fileInputRef.current?.click()}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 12px",borderRadius:14,cursor:"pointer",background:"linear-gradient(135deg,rgba(0,180,255,0.2),rgba(0,80,200,0.1))",border:"1.5px solid rgba(0,180,255,0.5)",flexShrink:0}}>
+            <span style={{fontSize:18}}>➕</span>
+            <span style={{fontSize:9,color:"#00d4ff",marginTop:2,fontWeight:700}}>Video</span>
+          </div>
+          <input ref={fileInputRef} type="file" accept="video/*" multiple onChange={handleVideoUpload} style={{display:"none"}}/>
+
+          {TOOLS.map(tool=>(
+            <div key={tool.id} className="tool-btn" onClick={()=>setActiveTool(activeTool===tool.id?null:tool.id)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 12px",borderRadius:14,cursor:"pointer",flexShrink:0,
+                background:activeTool===tool.id?"linear-gradient(135deg,rgba(0,180,255,0.2),rgba(0,80,200,0.1))":"rgba(255,255,255,0.04)",
+                border:`1.5px solid ${activeTool===tool.id?"rgba(0,180,255,0.6)":"rgba(255,255,255,0.08)"}`,
+                boxShadow:activeTool===tool.id?"0 0 14px rgba(0,180,255,0.2)":"none",
+              }}>
+              <span style={{fontSize:18}}>{tool.icon}</span>
+              <span style={{fontSize:9,color:activeTool===tool.id?"#00d4ff":"#445",marginTop:2,fontWeight:600}}>{tool.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* TIMELINE */}
+      <div style={{flex:1,minHeight:0,borderTop:"1px solid rgba(0,180,255,0.08)",background:"rgba(0,5,15,0.6)",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px",borderBottom:"1px solid rgba(0,180,255,0.08)"}}>
+          <span style={{fontSize:10,color:"#334",letterSpacing:1}}>TIMELINE</span>
+          <div style={{flex:1}}/>
+          <span style={{fontSize:10,color:"#445"}}>Zoom</span>
+          <input type="range" min={0.5} max={3} step={0.1} value={timelineZoom} onChange={e=>setTimelineZoom(+e.target.value)} style={{width:60}}/>
+          <span style={{fontSize:10,color:"#00d4ff"}}>{timelineZoom.toFixed(1)}x</span>
+          {["video","audio","text"].map(tab=>(
+            <Btn key={tab} small active={activeTab===tab} onClick={()=>setActiveTab(tab)}>{tab}</Btn>
+          ))}
+        </div>
+        <div style={{flex:1,overflowX:"auto",overflowY:"hidden",padding:"8px 12px"}}>
+          <div style={{width:TIMELINE_W,minHeight:80,position:"relative"}}>
+            {/* Ruler */}
+            <div style={{height:18,position:"relative",marginBottom:4,borderBottom:"1px solid rgba(0,180,255,0.12)"}}>
+              {Array.from({length:Math.ceil(duration)+1}).map((_,i)=>(
+                <div key={i} style={{position:"absolute",left:duration>0?(i/duration)*TIMELINE_W:i*60,top:0,display:"flex",flexDirection:"column",alignItems:"center"}}>
+                  <div style={{width:1,height:i%5===0?10:5,background:"rgba(0,180,255,0.3)"}}/>
+                  {i%5===0&&<div style={{fontSize:8,color:"#334",marginTop:1}}>{fmtTime(i)}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Playhead */}
+            {duration>0&&(
+              <div style={{position:"absolute",left:(currentTime/duration)*TIMELINE_W,top:0,bottom:0,width:2,background:"#00d4ff",zIndex:50,pointerEvents:"none",boxShadow:"0 0 8px #00d4ff"}}>
+                <div style={{width:8,height:8,background:"#00d4ff",borderRadius:"50%",marginLeft:-3,marginTop:18}}/>
+              </div>
+            )}
+
+            {/* Video track */}
+            {activeTab==="video"&&(
+              <div style={{position:"relative",height:48,marginBottom:6}}>
+                {clips.length===0?(
+                  <div style={{height:44,borderRadius:10,border:"1.5px dashed rgba(0,180,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#334"}}>Video yuklanmagan</div>
+                ):clips.map(clip=>(
+                  <div key={clip.id} onClick={()=>setSelectedClip(clip.id)}
+                    style={{
+                      position:"absolute",left:duration>0?(clip.start/duration)*TIMELINE_W:0,
+                      width:Math.max(duration>0?((clip.end-clip.start)/duration)*TIMELINE_W:80,40),
+                      height:44,top:2,borderRadius:10,cursor:"pointer",
+                      background:selectedClip===clip.id?"rgba(0,180,255,0.22)":"rgba(0,180,255,0.1)",
+                      border:`2px solid ${selectedClip===clip.id?"#00b4ff":"rgba(0,180,255,0.4)"}`,
+                      display:"flex",alignItems:"center",padding:"0 10px",overflow:"hidden",
+                      boxShadow:selectedClip===clip.id?"0 0 16px rgba(0,180,255,0.3)":"none",
+                    }}>
+                    <span style={{fontSize:10,color:"#fff",fontWeight:700,whiteSpace:"nowrap"}}>{clip.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Audio track */}
+            {activeTab==="audio"&&(
+              <div style={{position:"relative",height:48}}>
+                {audioClips.length===0?(
+                  <div style={{height:44,borderRadius:10,border:"1.5px dashed rgba(168,85,247,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#334"}}>Audio yo'q</div>
+                ):audioClips.map(a=>(
+                  <div key={a.id} style={{position:"absolute",left:0,width:Math.max(duration>0?(a.duration/duration)*TIMELINE_W:80,40),height:44,top:2,borderRadius:10,background:"rgba(168,85,247,0.1)",border:"2px solid rgba(168,85,247,0.4)",display:"flex",alignItems:"center",padding:"0 10px",overflow:"hidden"}}>
+                    <span style={{fontSize:10,color:"#c084fc",fontWeight:700}}>{a.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Text track */}
+            {activeTab==="text"&&(
+              <div style={{position:"relative",height:48}}>
+                {textLayers.length===0?(
+                  <div style={{height:44,borderRadius:10,border:"1.5px dashed rgba(255,200,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#334"}}>Matn yo'q</div>
+                ):textLayers.map(l=>(
+                  <div key={l.id} style={{position:"absolute",left:duration>0?(l.start/duration)*TIMELINE_W:0,width:Math.max(duration>0?((l.end-l.start)/duration)*TIMELINE_W:60,40),height:36,top:6,borderRadius:8,background:"rgba(255,200,0,0.1)",border:"2px solid rgba(255,200,0,0.4)",display:"flex",alignItems:"center",padding:"0 8px",overflow:"hidden",cursor:"pointer"}}>
+                    <span style={{fontSize:10,color:"#ffcc00"}}>T {l.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* EXPORT MODAL */}
+      {showExport&&(
+        <div onClick={()=>!exporting&&setShowExport(false)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200,backdropFilter:"blur(8px)"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{width:"100%",maxWidth:460,background:"linear-gradient(180deg,rgba(8,12,28,0.98),rgba(4,8,20,0.99))",borderRadius:"24px 24px 0 0",border:"1px solid rgba(0,180,255,0.2)",padding:"20px 18px 32px",animation:"slideUp 0.3s ease"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div style={{fontSize:16,fontWeight:700,color:"#00d4ff"}}>🎬 Export</div>
+              {!exporting&&<span onClick={()=>setShowExport(false)} style={{cursor:"pointer",color:"#556",fontSize:22}}>×</span>}
+            </div>
+            {exporting?(
+              <div style={{textAlign:"center",padding:"16px 0"}}>
+                <div style={{fontSize:13,color:"#aac",marginBottom:10}}>Export qilinmoqda...</div>
+                <div style={{height:6,background:"rgba(0,180,255,0.1)",borderRadius:6,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${exportProgress}%`,background:"linear-gradient(90deg,#00b4ff,#0055ff)",borderRadius:6,transition:"width 0.2s"}}/>
+                </div>
+                <div style={{fontSize:26,fontWeight:700,color:"#00d4ff",marginTop:8}}>{Math.round(exportProgress)}%</div>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:11,color:"#445",marginBottom:10,letterSpacing:1}}>FORMAT TANLANG</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {EXPORT_PRESETS.map(p=>(
+                    <div key={p.id} className="tool-btn" onClick={()=>handleExport(p)}
+                      style={{padding:14,borderRadius:14,cursor:"pointer",background:"rgba(0,180,255,0.06)",border:"1.5px solid rgba(0,180,255,0.25)"}}>
+                      <div style={{fontSize:14,fontWeight:700,color:"#00d4ff",marginBottom:4}}>{p.label}</div>
+                      <div style={{fontSize:10,color:"#445"}}>{p.size}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* UPLOAD SCREEN */}
+      {showUpload&&clips.length===0&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,5,15,0.97)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,flexDirection:"column",gap:20}}>
+          <div style={{fontSize:64,animation:"float 2.5s infinite"}}>🎬</div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:22,fontWeight:700,color:"#00d4ff",letterSpacing:2}}>VidEdit Pro</div>
+            <div style={{fontSize:12,color:"#334",marginTop:6,letterSpacing:1}}>Professional Video Editor</div>
+          </div>
+          <div className="tool-btn" onClick={()=>fileInputRef.current?.click()}
+            style={{padding:"14px 36px",borderRadius:50,background:"linear-gradient(135deg,#00b4ff,#0055ff)",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",boxShadow:"0 0 40px #00b4ff55",letterSpacing:1}}>
+            📹 Video yuklash
+          </div>
+          <div style={{fontSize:10,color:"#223",letterSpacing:1}}>MP4, MOV, AVI, WebM · 4K ga qadar</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,maxWidth:300,justifyContent:"center"}}>
+            {["✂️ Trim","⚡ Split","🚀 Speed","🎵 Music","✨ Filter","T Text","😊 Sticker"].map(f=>(
+              <div key={f} style={{padding:"4px 12px",borderRadius:20,fontSize:10,background:"rgba(0,180,255,0.07)",border:"1px solid rgba(0,180,255,0.18)",color:"#445"}}>{f}</div>
+            ))}
+          </div>
+          <Btn small onClick={()=>setShowUpload(false)}>Demo ko'rish</Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Mini components ──
+function Panel({children,style={}}){
+  return(
+    <div style={{background:"rgba(255,255,255,0.04)",backdropFilter:"blur(20px)",border:"1px solid rgba(0,180,255,0.15)",borderRadius:16,...style}}>
+      {children}
+    </div>
+  );
+}
+
+function Label({children}){
+  return<div style={{fontSize:11,color:"#445",marginBottom:8,letterSpacing:1}}>{children}</div>;
+}
+
+function Btn({children,onClick,active,small,danger,style={}}){
+  return(
+    <button className="tool-btn" onClick={onClick}
+      style={{
+        padding:small?"6px 12px":"10px 20px",borderRadius:50,
+        border:`1.5px solid ${danger?"rgba(255,60,80,0.6)":active?"rgba(0,200,255,0.9)":"rgba(0,180,255,0.3)"}`,
+        background:danger?"rgba(255,40,60,0.15)":active?"rgba(0,180,255,0.15)":"rgba(255,255,255,0.04)",
+        color:danger?"#ff6070":active?"#00d4ff":"#778",
+        fontSize:small?11:13,fontWeight:600,cursor:"pointer",
+        boxShadow:active?"0 0 14px rgba(0,200,255,0.2)":"none",
+        whiteSpace:"nowrap",...style,
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function Slider({label,min,max,step=1,value,onChange,fmt=v=>v}){
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+      <div style={{fontSize:10,color:"#778",width:70}}>{label}</div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(+e.target.value)} style={{flex:1}}/>
+      <div style={{fontSize:10,color:"#00d4ff",width:40,textAlign:"right"}}>{fmt(value)}</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
